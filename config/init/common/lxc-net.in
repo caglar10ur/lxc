@@ -7,6 +7,7 @@ varrun="@RUNTIME_PATH@/lxc"
 #   or in @LXC_DISTRO_SYSCONF@/lxc-net
 
 USE_LXC_BRIDGE="true"
+USE_OPENVSWITCH="false"
 LXC_BRIDGE="lxcbr0"
 LXC_ADDR="10.0.3.1"
 LXC_NETMASK="255.255.255.0"
@@ -70,7 +71,11 @@ start() {
     set -e
 
     # set up the lxc network
-    [ ! -d /sys/class/net/${LXC_BRIDGE} ] && brctl addbr ${LXC_BRIDGE}
+    if [ "x$USE_OPENVSWITCH" = "xtrue" ]; then
+        [ ! -d /sys/class/net/${LXC_BRIDGE} ] && ovs-vsctl --may-exist add-br ${LXC_BRIDGE}
+    else
+        [ ! -d /sys/class/net/${LXC_BRIDGE} ] && brctl addbr ${LXC_BRIDGE}
+    fi
     echo 1 > /proc/sys/net/ipv4/ip_forward
     echo 0 > /proc/sys/net/ipv6/conf/${LXC_BRIDGE}/accept_dad || true
 
@@ -147,7 +152,11 @@ stop() {
         pid=`cat "${varrun}"/dnsmasq.pid 2>/dev/null` && kill -9 $pid
         rm -f "${varrun}"/dnsmasq.pid
         # if $LXC_BRIDGE has attached interfaces, don't destroy the bridge
-        ls /sys/class/net/${LXC_BRIDGE}/brif/* > /dev/null 2>&1 || brctl delbr ${LXC_BRIDGE}
+        if [ "x$USE_OPENVSWITCH" = "xtrue" ]; then
+            ls /sys/class/net/${LXC_BRIDGE}/brif/* > /dev/null 2>&1 || ovs-vsctl --if-exists del-br ${LXC_BRIDGE}
+        else
+            ls /sys/class/net/${LXC_BRIDGE}/brif/* > /dev/null 2>&1 || brctl delbr ${LXC_BRIDGE}
+        fi
     fi
 
     rm -f "${varrun}"/network_up
